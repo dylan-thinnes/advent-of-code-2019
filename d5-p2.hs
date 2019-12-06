@@ -8,16 +8,23 @@ import Data.IntMap ((!))
 import Data.List.Split
 import Data.Function
 
-data Tape = Tape
-    { cells :: IM.IntMap Int
-    , position :: Int
-    } deriving (Show)
+-- Data Types
 
 type Program = RWST [String] [Int] Tape
 
-data Op = Op { instr :: Instr, args :: [Int] } deriving (Show)
-data Func = Add | Mult | Read | Print | Exit | JumpIfTrue | JumpIfFalse | LessThan | Equal deriving (Show)
-data Instr = Instr { func :: Func, imms :: [Bool] } deriving (Show)
+data Tape = Tape { cells :: IM.IntMap Int, position :: Int } 
+    deriving (Show)
+
+data Op = Op { instr :: Instr, args :: [Int] }
+    deriving (Show)
+
+data Func = Add | Mult | Read | Print | Exit | JumpIfTrue | JumpIfFalse | LessThan | Equal 
+    deriving (Show)
+
+data Instr = Instr { func :: Func, imms :: [Bool] } 
+    deriving (Show)
+
+-- Tape Manipulation
 
 toTape :: String -> Tape
 toTape xs = Tape cells 0
@@ -35,6 +42,14 @@ setPosition pos (Tape cells _) = Tape cells pos
 
 finished :: Tape -> Bool
 finished (Tape cells position) = position > (fst $ IM.findMax cells)
+
+advance :: Tape -> (Int, Tape)
+advance (Tape cells position)
+  = (cells ! position, Tape cells $ position + 1)
+
+advanceM = state advance
+
+-- Func Manipulation
 
 size :: Func -> Int
 size Add   = 3
@@ -76,11 +91,7 @@ instrFromInt i = Instr func imms
         7  -> LessThan
         8  -> Equal
 
-advance :: Tape -> (Int, Tape)
-advance (Tape cells position)
-  = (cells ! position, Tape cells $ position + 1)
-
-advanceM = state advance
+-- Parsing Ops, Args
 
 getOp :: Monad m => Program m Op
 getOp = do
@@ -93,45 +104,50 @@ getArg :: Monad m => Int -> Bool -> Program m Int
 getArg x False = gets $ readTape x
 getArg x True  = pure x
 
--- Eliminate explicit recursion with CPS
+-- Running Ops
+
+-- ( Eliminate explicit recursion with CPS )
 runOp :: Op -> Program IO (Program IO () -> Program IO ())
-runOp (Op (Instr func imms) args) = do
+runOp (Op (Instr func imms) args) = do 
     values <- sequence $ zipWith getArg args imms
-    case func of
-        Exit  -> pure $ const $ pure ()
-        Add   -> do
-            modify $ writeTape (values !! 2) $ values !! 0 + values !! 1
-            pure id
-        Mult  -> do
-            modify $ writeTape (values !! 2) $ values !! 0 * values !! 1
-            pure id
-        Read  -> do
-            input <- lift getLine
-            modify $ writeTape (values !! 0) $ read input
-            pure id
-        Print -> do
-            tell $ [values !! 0]
-            pure id
-        JumpIfTrue -> do
-            if (values !! 0) == 0
-               then pure () 
-               else modify $ setPosition $ values !! 1
-            pure id
-        JumpIfFalse -> do
-            if (values !! 0) == 0
-               then modify $ setPosition $ values !! 1
-               else pure ()
-            pure id
-        LessThan -> do
-            let areLt = fromEnum $ values !! 0 < values !! 1
-            modify $ writeTape (values !! 2) $ areLt
-            pure id
-        Equal -> do
-            let areEq = fromEnum $ values !! 0 == values !! 1
-            modify $ writeTape (values !! 2) $ areEq
-            pure id
+    runOpRaw func values
+
+runOpRaw :: Func -> [Int] -> Program IO (Program IO () -> Program IO ())
+runOpRaw Exit values = pure $ const $ pure ()
+runOpRaw Add  values = do
+    modify $ writeTape (values !! 2) $ values !! 0 + values !! 1
+    pure id
+runOpRaw Mult values = do
+    modify $ writeTape (values !! 2) $ values !! 0 * values !! 1
+    pure id
+runOpRaw Read values = do
+    input <- lift getLine
+    modify $ writeTape (values !! 0) $ read input
+    pure id
+runOpRaw Print values = do
+    tell $ [values !! 0]
+    pure id
+runOpRaw JumpIfTrue values = do
+    if (values !! 0) == 0
+       then pure () 
+       else modify $ setPosition $ values !! 1
+    pure id
+runOpRaw JumpIfFalse values = do
+    if (values !! 0) == 0
+       then modify $ setPosition $ values !! 1
+       else pure ()
+    pure id
+runOpRaw LessThan values = do
+    let areLt = fromEnum $ values !! 0 < values !! 1
+    modify $ writeTape (values !! 2) $ areLt
+    pure id
+runOpRaw Equal values = do
+    let areEq = fromEnum $ values !! 0 == values !! 1
+    modify $ writeTape (values !! 2) $ areEq
+    pure id
 
 -- Run the program
+
 program :: Program IO ()
 program = do
     op <- getOp
@@ -144,4 +160,5 @@ runProgram = execRWST program
 main = do
     tape <- toTape <$> getLine
     (finalTape, log) <- runProgram [] tape
+    mapM print log
     pure ()
