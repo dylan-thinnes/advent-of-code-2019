@@ -20,10 +20,10 @@ allDepths orbits = f 0 "COM" M.empty
               Nothing -> depths'
               Just children -> foldr (f (currDepth + 1)) depths' children
 
-p1 = interact $ \s ->
-    let orbits = getOrbits s
-        depths = allDepths orbits
-     in show $ sum $ M.elems depths
+depthsSum :: Depths -> Int
+depthsSum = sum . M.elems
+
+p1 = interact $ show . depthsSum . allDepths . getOrbits
 
 type Traces = Reference [Object]
 
@@ -43,6 +43,9 @@ route a b traces = do
     bt <- M.lookup b traces
     let common = length $ takeWhile id $ zipWith (==) (reverse at) (reverse bt)
     pure $ reverse (drop (common - 1) (reverse at)) ++ (drop common (reverse bt))
+
+transfersBetween :: Object -> Object -> Traces -> Maybe Int
+transfersBetween a b traces = fmap (subtract 1 . length) $ route a b traces
 
 p2 = interact $ \s ->
     let orbits = getOrbits s
