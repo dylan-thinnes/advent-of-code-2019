@@ -1,9 +1,21 @@
 import qualified Data.Map as M
 import Data.List.Split
+import Data.Monoid
 
 type Reference a = M.Map Object a
 type Object = String
 type Orbits = Reference [Object]
+
+-- The Monoid is the yardstick of civilized code
+traceMonoid :: Monoid a => (Object -> a) -> Orbits -> Reference a
+traceMonoid f orbits = g mempty "COM" M.empty
+    where
+    g currTrace object oldRef
+      = let newRef = M.insert object currTrace oldRef
+            nextTrace = f object <> currTrace
+         in case M.lookup object orbits of
+              Nothing -> newRef
+              Just children -> foldr (g nextTrace) newRef children
 
 type Depths = Reference Int
 
@@ -11,14 +23,7 @@ getOrbits :: String -> Orbits
 getOrbits s = M.fromListWith (<>) $ map (\[x,y]->(x,[y])) $ map (splitOn ")") $ lines s
 
 allDepths :: Orbits -> Depths
-allDepths orbits = f 0 "COM" M.empty
-    where
-    f :: Int -> Object -> Depths -> Depths
-    f currDepth object depths 
-      = let depths' = M.insert object currDepth depths
-         in case M.lookup object orbits of
-              Nothing -> depths'
-              Just children -> foldr (f (currDepth + 1)) depths' children
+allDepths = fmap getSum . traceMonoid (const $ Sum 1)
 
 depthsSum :: Depths -> Int
 depthsSum = sum . M.elems
@@ -28,14 +33,7 @@ p1 = interact $ show . depthsSum . allDepths . getOrbits
 type Traces = Reference [Object]
 
 allTraces :: Orbits -> Traces
-allTraces orbits = f [] "COM" M.empty
-    where
-    f :: [Object] -> Object -> Traces -> Traces
-    f currTrace object traces 
-      = let traces' = M.insert object currTrace traces
-         in case M.lookup object orbits of
-              Nothing -> traces'
-              Just children -> foldr (f (object:currTrace)) traces' children
+allTraces = traceMonoid pure
 
 route :: Object -> Object -> Traces -> Maybe [Object]
 route a b traces = do
