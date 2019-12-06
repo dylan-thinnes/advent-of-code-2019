@@ -45,9 +45,6 @@ route a b traces = do
 transfersBetween :: Object -> Object -> Traces -> Maybe Int
 transfersBetween a b traces = fmap (subtract 1 . length) $ route a b traces
 
-p2 = interact $ \s ->
-    let orbits = getOrbits s
-        traces = allTraces orbits
-     in show $ (subtract 1) . length <$> route "SAN" "YOU" traces
+p2 = interact $ show . transfersBetween "SAN" "YOU" . allTraces . getOrbits
 
 main = p2
