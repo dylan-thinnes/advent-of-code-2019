@@ -4,13 +4,14 @@ import Data.List
 import Control.Monad
 import Control.Monad.Trans (lift)
 import Control.Monad.Trans.State.Strict
+import Control.Monad.Trans.Except
 import Control.Lens
 import qualified Data.IntMap as IM
 import Data.IntMap ((!))
 import D7Computer
-import Debug.Trace
+import Data.Maybe (catMaybes)
 
-type Programs = StateT (IM.IntMap Tape)
+type Programs m a = Stack m (IM.IntMap Tape) a
 
 type Tuning = [Int]
 type Output = Int
@@ -25,7 +26,8 @@ tuneAmps :: Tape -> Tuning -> IO Int
 tuneAmps tape seq = foldM f 0 seq
     where
     f signal phase = do
-        final <- execStateT (passArgs [phase,signal] >> program) tape
+        let tape' = tape { inputs = [phase, signal] }
+        final <- runProgram tape' program
         pure $ head $ outputs final
 
 bestTuningP1 :: Tape -> IO Int
@@ -39,10 +41,10 @@ test2 = toTape "3,26,1001,26,-4,26,3,27,1002,27,2,27,1,27,26,27,4,27,1001,28,-1,
 
 repeating :: Bool -> Tuning -> [Int] -> Programs IO [Int]
 repeating firstRun tuning inputs = do
-    keys <- gets IM.keys
+    keys <- lift $ gets IM.keys
     out <- foldM f inputs keys
 
-    hasRunning <- gets $ all (not . finished) . IM.elems
+    hasRunning <- lift $ gets $ all (not . finished) . IM.elems
     if hasRunning then repeating False tuning out else pure out
 
     where
@@ -51,14 +53,15 @@ repeating firstRun tuning inputs = do
       = zoom (ix i) $ do
           let passTuning = if firstRun then [tuning !! i] else []
           passArgs $ passTuning <> outputs
-          stepUntilOutput
-          out <- state consumeOutput
-          if null out then pure outputs else pure out
+          catchE (stepUntilOutput >> lift (state consumeOutput)) (\_ -> pure outputs)
 
-tuneRepeating :: Tape -> Tuning -> IO Int
+tuneRepeating :: Tape -> Tuning -> IO (Maybe Int)
 tuneRepeating tape tuning = do
-    final <- evalStateT (repeating True tuning [0]) $ IM.fromList $ zip [0..] $ replicate 5 tape
-    pure $ last final
+    let startingTapes = IM.fromList $ zip [0..] $ replicate 5 tape
+    (res,tapes) <- runStack startingTapes $ repeating True tuning [0]
+    case res of
+      Left () -> pure $ Nothing
+      Right x -> pure $ Just $ last x
 
 bestTuningP2 :: Tape -> IO Int
-bestTuningP2 tape = mapM (tuneRepeating tape) p2Tunings >>= pure . maximum
+bestTuningP2 tape = mapM (tuneRepeating tape) p2Tunings >>= pure . maximum . catMaybes

@@ -7,6 +7,8 @@ module D7Computer where
 import Control.Monad
 import Control.Monad.Trans (lift)
 import Control.Monad.Trans.State.Strict
+import Control.Monad.Trans.Except
+import Control.Monad.Loops
 import qualified Data.IntMap as IM
 import Data.IntMap ((!))
 import Data.List.Split
@@ -14,9 +16,15 @@ import Data.Function
 
 -- Data Types
 
-type Program = StateT Tape
+type Stack m s a = ExceptT () (StateT s m) a
+type Program m a = Stack m Tape a
 
-data Tape = Tape { cells :: IM.IntMap Int, position :: Int, halted :: Bool, inputs :: [Int], outputs :: [Int] }
+data Tape = Tape { cells :: IM.IntMap Int
+                 , position :: Int
+                 , halted :: Bool
+                 , inputs :: [Int]
+                 , outputs :: [Int] 
+                 }
     deriving (Show)
 
 data Op = Op { instr :: Instr, args :: [Int] }
@@ -116,61 +124,52 @@ instrFromInt i = Instr func imms
 -- Parsing Ops, Args
 
 getOp :: Monad m => Program m Op
-getOp = do
+getOp = lift $ do
     instr <- instrFromInt <$> advanceM
     let argCount = instr & func & size
     args <- replicateM argCount $ advanceM
     pure $ Op instr args 
 
 getArg :: Monad m => Int -> Bool -> Program m Int
-getArg x False = gets $ readTape x
-getArg x True  = pure x
+getArg x False = lift $ gets $ readTape x
+getArg x True  = lift $ pure x
 
 -- Running Ops
 
--- ( Eliminate explicit recursion with CPS )
-runOp :: Op -> Program IO (Program IO () -> Program IO ())
+runOp :: Op -> Program IO ()
 runOp (Op (Instr func imms) args) = do 
     values <- sequence $ zipWith getArg args imms
     runOpRaw func values
 
-runOpRaw :: Func -> [Int] -> Program IO (Program IO () -> Program IO ())
+runOpRaw :: Func -> [Int] -> Program IO ()
 runOpRaw Exit values = do
-    modify halt
-    pure $ const $ pure ()
-runOpRaw Add  values = do
+    lift $ modify halt
+    throwE ()
+runOpRaw Add  values = lift $ do
     modify $ writeTape (values !! 2) $ values !! 0 + values !! 1
-    pure id
-runOpRaw Mult values = do
+runOpRaw Mult values = lift $ do
     modify $ writeTape (values !! 2) $ values !! 0 * values !! 1
-    pure id
-runOpRaw Read values = do
+runOpRaw Read values = lift $ do
     input <- state readInput >>= \case
         Nothing -> read <$> lift getLine
         Just x  -> pure x
     modify $ writeTape (values !! 0) input
-    pure id
-runOpRaw Print values = do
+runOpRaw Print values = lift $ do
     modify $ writeOutput [values !! 0]
-    pure id
-runOpRaw JumpIfTrue values = do
+runOpRaw JumpIfTrue values = lift $ do
     if (values !! 0) == 0
        then pure () 
        else modify $ setPosition $ values !! 1
-    pure id
-runOpRaw JumpIfFalse values = do
+runOpRaw JumpIfFalse values = lift $ do
     if (values !! 0) == 0
        then modify $ setPosition $ values !! 1
        else pure ()
-    pure id
-runOpRaw LessThan values = do
+runOpRaw LessThan values = lift $ do
     let areLt = fromEnum $ values !! 0 < values !! 1
     modify $ writeTape (values !! 2) $ areLt
-    pure id
-runOpRaw Equal values = do
+runOpRaw Equal values = lift $ do
     let areEq = fromEnum $ values !! 0 == values !! 1
     modify $ writeTape (values !! 2) $ areEq
-    pure id
 
 -- Run the program
 
@@ -178,24 +177,23 @@ step = getOp >>= runOp
 
 stepUntilOutput :: Program IO ()
 stepUntilOutput = do
-    startOutput <- length <$> gets outputs
+    startOutput <- lift $ length <$> gets outputs
     let f = do
-        op <- getOp
-        cont <- runOp op
-        newOutput <- length <$> gets outputs
+        step
+        newOutput <- lift $ length <$> gets outputs
         if startOutput == newOutput
-           then cont f
+           then f
            else pure ()
     f
 
 passArgs :: Monad m => [Int] -> Program m ()
-passArgs xs = modify $ writeInput xs
+passArgs xs = lift $ modify $ writeInput xs
 
 program :: Program IO ()
-program = do
-    op <- getOp
-    cont <- runOp op
-    cont program
+program = whileM_ (lift $ gets finished) step
 
-runProgram :: Tape -> IO Tape
-runProgram = execStateT program
+runStack :: s -> Stack IO s a -> IO (Either () a, s)
+runStack state stack = flip runStateT state $ runExceptT stack
+
+runProgram :: Tape -> Program IO () -> IO Tape
+runProgram tape program = flip execStateT tape $ runExceptT program
