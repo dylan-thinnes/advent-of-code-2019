@@ -190,7 +190,7 @@ passArgs :: Monad m => [Int] -> Program m ()
 passArgs xs = lift $ modify $ writeInput xs
 
 program :: Program IO ()
-program = whileM_ (lift $ gets finished) step
+program = whileM_ (lift $ gets $ not . finished) step
 
 runStack :: s -> Stack IO s a -> IO (Either () a, s)
 runStack state stack = flip runStateT state $ runExceptT stack
