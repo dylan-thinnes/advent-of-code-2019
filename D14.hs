@@ -6,7 +6,6 @@ import Data.Map.Strict ((!),(!?))
 import Data.Maybe
 import Data.Function ((&))
 import Data.List.Split
-import Debug.Trace
 
 data Quantity = Quantity { qty :: Int, total :: Int } deriving Show
 type Quantities = M.Map String Quantity
@@ -18,14 +17,14 @@ input = toEquations "8 SPJN, 2 LJRB, 1 QMDTJ => 1 TFPRF\n111 ORE => 5 GCFP\n5 NG
 
 toEquations :: String -> Equations
 toEquations = M.fromList . map toEquation . lines
-    where
-        toEquation :: String -> (String, (Int, [(String, Int)]))
-        toEquation s
-          = let [reqStr, outStr] = splitOn " => " s
-                f = (\[q,i] -> (i, read q))
-                reqs = f . words <$> splitOn ", " reqStr
-                (resource, qty) = f $ words outStr
-             in (resource, (qty, reqs))
+
+toEquation :: String -> (String, (Int, [(String, Int)]))
+toEquation s
+  = let [reqStr, outStr] = splitOn " => " s
+        f = (\[q,i] -> (i, read q))
+        reqs = f . words <$> splitOn ", " reqStr
+        (resource, qty) = f $ words outStr
+     in (resource, (qty, reqs))
 
 add :: Int -> Quantity -> Quantity
 add i (Quantity x y) = Quantity (x + i) (y + i)
@@ -56,8 +55,7 @@ provision eqs (resource, qty) quantities
   = let (product, requirements) = eqs ! resource
         multiples = ceiling $ fromIntegral qty / fromIntegral product
         totalManufactured = product * multiples
-        f quantities spec
-            = consume eqs spec quantities
+        f quantities spec = consume eqs spec quantities
      in M.alter (Just . addM totalManufactured) resource 
       $ foldl f quantities $ map (fmap (* multiples)) requirements
 
