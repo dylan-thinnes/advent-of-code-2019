@@ -62,10 +62,7 @@ provision eqs (resource, qty) quantities
       $ foldl f quantities $ map (fmap (* multiples)) requirements
 
 maxFuel :: Equations -> Int -> Int
-maxFuel equations ore =
-    let orePer = try 1
-        startingGuess = ore `div` orePer
-     in f 0 ore
+maxFuel equations ore = f 0 ore
     where
         try i = total $ getQty "ORE" $ provision input ("FUEL", i) M.empty
         f guess offset =
