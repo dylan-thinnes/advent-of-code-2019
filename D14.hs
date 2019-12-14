@@ -21,9 +21,9 @@ toEquations = M.fromList . map toEquation . lines
 toEquation :: String -> (String, (Int, [(String, Int)]))
 toEquation s
   = let [reqStr, outStr] = splitOn " => " s
-        f = (\[q,i] -> (i, read q))
-        reqs = f . words <$> splitOn ", " reqStr
-        (resource, qty) = f $ words outStr
+        readReq [q,i] = (i, read q)
+        reqs = readReq . words <$> splitOn ", " reqStr
+        (resource, qty) = readReq $ words outStr
      in (resource, (qty, reqs))
 
 add :: Int -> Quantity -> Quantity
